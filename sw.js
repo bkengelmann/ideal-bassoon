@@ -1,5 +1,5 @@
-// Bump this version whenever any file changes, so phones pick up the update.
-const CACHE = 'calc-v1';
+// Bump this version whenever any file changes.
+const CACHE = 'calc-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -14,6 +14,29 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(r => r || fetch(e.request)));
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  if (req.mode === 'navigate') {
+    // Try the network briefly so updates arrive; fall back to the cached app instantly offline.
+    e.respondWith((async () => {
+      const cached = (await caches.match(req, { ignoreSearch: true })) || (await caches.match('./index.html'));
+      try {
+        const net = await Promise.race([
+          fetch(req),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500))
+        ]);
+        if (net && net.ok) {
+          const c = await caches.open(CACHE);
+          c.put('./index.html', net.clone());
+          c.put('./', net.clone());
+          return net;
+        }
+        return cached || net;
+      } catch (err) {
+        return cached || Response.error();
+      }
+    })());
+    return;
+  }
+  e.respondWith(caches.match(req, { ignoreSearch: true }).then(r => r || fetch(req)));
 });
