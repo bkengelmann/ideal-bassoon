@@ -36,9 +36,12 @@ body{margin:0;height:100%;background:var(--bg);color:#fff;overflow:hidden;oversc
 #dot{position:absolute;left:50%;top:6px;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:#262626;opacity:0;pointer-events:none;}
 #dot.flash{background:#6a6a6a;}
 
-#display{flex:1 1 auto;min-height:0;display:flex;align-items:flex-end;justify-content:flex-end;overflow:hidden;padding:0 2px 12px;}
-#num{flex:none;white-space:nowrap;font-weight:300;line-height:1;letter-spacing:-0.015em;font-size:min(23vw,92px);}
-#display.over{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px);mask-image:linear-gradient(to right,transparent 0,#000 48px);}
+#display{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;padding:0 2px 12px;}
+.line{width:100%;display:flex;justify-content:flex-end;overflow:hidden;}
+.line.over{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px);mask-image:linear-gradient(to right,transparent 0,#000 48px);}
+#num,#expr{flex:none;white-space:nowrap;line-height:1.08;}
+#num{font-weight:300;letter-spacing:-0.015em;font-size:min(23vw,92px);}
+#expr{font-weight:400;color:#9a9a9f;font-size:min(10.5vw,42px);margin-bottom:6px;}
 
 #keys{flex:none;display:grid;grid-template-columns:repeat(4,1fr);gap:min(2.2vw,10px);
   grid-template-areas:"bs c pc dv" "k7 k8 k9 mu" "k4 k5 k6 mi" "k1 k2 k3 pl" "pm k0 dt eq";}
@@ -56,6 +59,7 @@ body{margin:0;height:100%;background:var(--bg);color:#fff;overflow:hidden;oversc
 @media (orientation:landscape){
   #hot{height:44px;}
   #num{font-size:min(13vh,56px);}
+  #expr{font-size:min(7vh,30px);margin-bottom:2px;}
   #display{padding-bottom:10px;}
   #keys{height:55vh;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(4,1fr);gap:8px 10px;
     grid-template-areas:"k7 k8 k9 bs dv" "k4 k5 k6 c mu" "k1 k2 k3 pc mi" "pm k0 dt eq pl";}
@@ -125,7 +129,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--op);margin:0;}
     </button>
     <div id="dot"></div>
   </div>
-  <div id="display"><span id="num">0</span></div>
+  <div id="display"><div class="line" id="exprLine"><span id="expr"></span></div><div class="line" id="numLine"><span id="num">0</span></div></div>
   <div id="keys"></div>
   <div id="scrim" hidden></div>
   <div id="menu" hidden>
@@ -193,7 +197,7 @@ const OPS={'+':(a,b)=>a+b,'−':(a,b)=>a-b,'×':(a,b)=>a*b,'÷':(a,b)=>a/b};
 const KEY='calcForceCfg.v2',OLD='calcForceCfg.v1',MAXSTEPS=9;
 const $=id=>document.getElementById(id);
 const newStep=o=>Object.assign({type:'fixed',value:'',fmt:'MDhm',offset:2,after:1},o||{});
-const defaults=()=>({steps:[newStep({value:'1089',after:4})],pctFmt:'MDhm',pctOffset:2,shift:3,encAfter:3,commas:true,dot:true});
+const defaults=()=>({steps:[newStep({value:'5520005',after:4}),newStep({value:'3702192120',after:2})],pctFmt:'MDhm',pctOffset:2,shift:3,encAfter:3,commas:true,dot:true});
 
 function load(){
   try{
@@ -227,15 +231,15 @@ const pending=()=>run.armed&&run.idx<steps().length;
 function rearm(){run.armed=true;run.idx=0;run.since=0;run.captured=null;run.override=null;}
 
 /* ---------- calculator state ---------- */
-const st={tokens:[],entry:null,raw:'',value:0,lastOp:null,lastOperand:null,justEval:false,forced:null};
+// tokens: numbers and operator strings; tstr: the matching display strings (plain, no commas)
+const st={tokens:[],tstr:[],carried:false,entry:null,raw:'',value:0,lastOp:null,lastOperand:null,
+  justEval:false,forced:null,lastExpr:''};
 const lastTok=()=>st.tokens[st.tokens.length-1];
 const lastIsOp=()=>st.tokens.length>0&&typeof lastTok()==='string';
 const shown=()=>st.entry!==null?parseFloat(st.entry):st.value;
-function shownStr(){
-  if(st.entry!==null)return st.entry;
-  if(st.forced!==null)return st.forced;
-  return String(st.value);
-}
+const plain=v=>fmtNum(v).replace(/,/g,'');
+const resultStr=()=>st.forced!==null?st.forced:plain(st.value);
+function shownStr(){return st.entry!==null?st.entry:resultStr();}
 function evalTokens(t){
   const a=[t[0]];
   for(let i=1;i<t.length;i+=2){
@@ -244,6 +248,7 @@ function evalTokens(t){
   }
   let r=a[0];for(let i=1;i<a.length;i+=2)r=OPS[a[i]](r,a[i+1]);return r;
 }
+function resetExpr(){st.tokens=[];st.tstr=[];st.carried=false;}
 
 function capture(){
   if(st.entry===null||!pending())return;
@@ -251,8 +256,7 @@ function capture(){
   if(s.type==='encode'&&run.captured===null&&st.raw)run.captured=st.raw;
 }
 function digit(d){
-  st.forced=null;
-  if(st.justEval){st.tokens=[];st.justEval=false;st.entry=null;}
+  if(st.justEval){resetExpr();st.justEval=false;st.entry=null;st.forced=null;}
   if(st.entry===null){st.entry=d==='.'?'0.':d;st.raw=d==='.'?'':d;}
   else if(d==='.'){if(st.entry.includes('.'))return;st.entry+='.';}
   else{
@@ -263,48 +267,81 @@ function digit(d){
   render();
 }
 function op(o){
-  st.forced=null;
-  if(st.entry!==null){capture();st.tokens.push(parseFloat(st.entry));st.entry=null;st.raw='';}
-  else if(lastIsOp()){st.tokens[st.tokens.length-1]=o;render();return;}
-  else st.tokens.push(st.value);
-  st.justEval=false;
+  if(st.entry!==null){capture();st.tokens.push(parseFloat(st.entry));st.tstr.push(st.entry);st.entry=null;st.raw='';}
+  else if(lastIsOp()){st.tokens[st.tokens.length-1]=o;st.tstr[st.tstr.length-1]=o;render();return;}
+  else{st.carried=st.justEval;st.tokens.push(st.value);st.tstr.push(resultStr());}
+  st.justEval=false;st.forced=null;
   const t=st.tokens;
   if(o==='+'||o==='−')st.value=evalTokens(t);
   else{let i=t.length-1;while(i>0&&(t[i-1]==='×'||t[i-1]==='÷'))i-=2;st.value=evalTokens(t.slice(i));}
-  t.push(o);render();
+  t.push(o);st.tstr.push(o);render();
+}
+// Rewrite one earlier number so the shown equation equals the forced result.
+function balance(nums,strs,carried,delta){
+  if(!isFinite(delta)||Math.abs(delta)<1e-12)return strs;
+  const n=nums.length,cands=[];
+  for(let i=0;i<n-1;i+=2){
+    const prev=i>0?nums[i-1]:'+',next=nums[i+1];
+    if((prev==='+'||prev==='−')&&(next==='+'||next==='−'))cands.push(i);
+  }
+  if(!cands.length)return strs;
+  const pick=carried&&cands[0]===0?0:cands[0];
+  const sign=pick>0&&nums[pick-1]==='−'?-1:1;
+  const nv=nums[pick]+sign*delta;
+  if(!(nv>=0))return strs;
+  const out=strs.slice();out[pick]=plain(nv);return out;
+}
+function exprText(nums,strs){
+  return strs.map((s,i)=>typeof nums[i]==='string'?s:fmtOperand(s,i)).join('');
+}
+function fmtOperand(s,i){
+  let f=fmtEntry(s);
+  if(f[0]==='-'){f='−'+f.slice(1);if(i>0)f='('+f+')';}
+  return f;
 }
 function equals(){
   capture();
-  let r;
+  let nums,strs,carried;
   if(lastIsOp()){
-    const o=lastTok(),operand=shown();
-    st.tokens.push(operand);r=evalTokens(st.tokens);st.lastOp=o;st.lastOperand=operand;
-  }else{
-    const b=shown();r=st.lastOp?OPS[st.lastOp](b,st.lastOperand):b;
-  }
+    const o=lastTok(),operand=shown(),os=st.entry!==null?st.entry:plain(st.value);
+    nums=st.tokens.concat([operand]);strs=st.tstr.concat([os]);carried=st.carried;
+    st.lastOp=o;st.lastOperand=operand;
+  }else if(st.tokens.length===0){
+    const b=shown(),bs=shownStr();
+    if(st.lastOp&&st.entry===null){nums=[b,st.lastOp,st.lastOperand];strs=[bs,st.lastOp,plain(st.lastOperand)];carried=true;}
+    else{nums=[b];strs=[bs];carried=false;}
+  }else{nums=st.tokens.slice();strs=st.tstr.slice();carried=st.carried;}
+  let r=nums.length===1?nums[0]:evalTokens(nums);
   let fstr=null;
   if(pending()){
     run.since++;
     const s=steps()[run.idx];
     if(run.since>=(+s.after||1)){
       const f=applyStep(s,r);
-      if(f){r=f.num;fstr=f.str;}
+      if(f){strs=balance(nums,strs,carried,f.num-r);r=f.num;fstr=f.str;}
       run.idx++;run.since=0;run.captured=null;
     }
   }
-  st.tokens=[];st.entry=null;st.raw='';st.value=r;st.justEval=true;st.forced=fstr;
+  st.lastExpr=exprText(nums,strs);
+  resetExpr();st.entry=null;st.raw='';st.value=r;st.justEval=true;st.forced=fstr;
   render();renderDot();
 }
-function allClear(){st.tokens=[];st.entry=null;st.raw='';st.value=0;st.lastOp=null;st.lastOperand=null;st.justEval=false;st.forced=null;}
+function allClear(){resetExpr();st.entry=null;st.raw='';st.value=0;st.lastOp=null;st.lastOperand=null;st.justEval=false;st.forced=null;st.lastExpr='';}
 function clearKey(){
-  if(st.entry!==null){st.entry=null;st.raw='';st.value=0;st.forced=null;}
+  if(st.entry!==null&&st.tokens.length){st.entry=null;st.raw='';}
   else allClear();
   render();
 }
 function back(){
-  if(st.entry===null)return;
-  st.entry=st.entry.slice(0,-1);st.raw=st.raw.slice(0,-1);
-  if(st.entry===''||st.entry==='-'){st.entry='0';st.raw='';}
+  if(st.justEval)return;
+  if(st.entry!==null){
+    st.entry=st.entry.slice(0,-1);st.raw=st.raw.slice(0,-1);
+    if(st.entry===''||st.entry==='-'){st.raw='';st.entry=st.tokens.length?null:'0';}
+  }else if(lastIsOp()){
+    st.tokens.pop();st.tstr.pop();
+    st.tokens.pop();st.entry=st.tstr.pop();st.raw='';
+    if(!st.tokens.length)st.carried=false;
+  }
   render();
 }
 function sign(){
@@ -315,13 +352,14 @@ function sign(){
   render();
 }
 function percent(){
-  st.forced=null;
   let n=shown();
   if(lastIsOp()&&(lastTok()==='+'||lastTok()==='−')&&st.entry!==null)n=evalTokens(st.tokens.slice(0,-1))*n/100;
   else n=n/100;
+  if(st.justEval){resetExpr();st.justEval=false;}
+  st.forced=null;
   const s=String(parseFloat(n.toPrecision(12)));
-  if(!/e/.test(s)){st.entry=s;st.raw='';}else{st.entry=null;st.value=n;}
-  st.justEval=false;render();
+  st.entry=/e/.test(s)?plain(n):s;st.raw='';
+  render();
 }
 
 /* ---------- force values ---------- */
@@ -373,20 +411,23 @@ function fmtNum(v){
   }
   return v.toExponential(6).replace(/\.?0+e/,'e').replace('e+','e');
 }
-const disp=$('display'),num=$('num');
-function fit(){
-  num.style.fontSize='';disp.classList.remove('over');
-  const base=parseFloat(getComputedStyle(num).fontSize),floor=base*0.58;
+const num=$('num'),expr=$('expr'),numLine=$('numLine'),exprLine=$('exprLine');
+function fitLine(el,line,minRatio){
+  el.style.fontSize='';line.classList.remove('over');
+  const base=parseFloat(getComputedStyle(el).fontSize),floor=base*minRatio,w=line.clientWidth-4;
   let fs=base,g=0;
-  while(num.getBoundingClientRect().width>disp.clientWidth-4&&fs>floor&&g++<40){fs*=0.95;num.style.fontSize=fs+'px';}
-  if(num.getBoundingClientRect().width>disp.clientWidth-4)disp.classList.add('over');
+  while(el.getBoundingClientRect().width>w&&fs>floor&&g++<40){fs*=0.95;el.style.fontSize=fs+'px';}
+  if(el.getBoundingClientRect().width>w)line.classList.add('over');
 }
+function fit(){fitLine(num,numLine,0.58);fitLine(expr,exprLine,0.8);}
 function render(){
-  num.textContent=st.entry!==null?fmtEntry(st.entry):st.forced!==null?fmtEntry(st.forced):fmtNum(st.value);
+  let big,small='';
+  if(st.justEval){big=st.forced!==null?fmtEntry(st.forced):fmtNum(st.value);small=st.lastExpr;}
+  else if(st.tokens.length)big=exprText(st.tokens,st.tstr)+(st.entry!==null?fmtOperand(st.entry,st.tokens.length):'');
+  else big=st.entry!==null?fmtOperand(st.entry,0):fmtNum(st.value);
+  num.textContent=big;expr.textContent=small;exprLine.style.visibility=small?'visible':'hidden';
   fit();
-  $('k-c').textContent=st.entry!==null?'C':'AC';
-  const act=st.entry===null&&lastIsOp()?lastTok():null;
-  document.querySelectorAll('.k.op').forEach(b=>b.classList.toggle('active',b.dataset.k===act));
+  $('k-c').textContent=st.entry!==null||st.tokens.length?'C':'AC';
 }
 function renderDot(){$('dot').style.opacity=cfg.dot&&pending()?'1':'0';}
 function flash(){
@@ -457,6 +498,7 @@ KEYS.forEach(([id,k,cls])=>{
 
 /* swipe display to delete */
 let sx=null;
+const disp=$('display');
 disp.addEventListener('pointerdown',e=>{sx=e.clientX;});
 disp.addEventListener('pointerup',e=>{if(sx!==null&&Math.abs(e.clientX-sx)>24)back();sx=null;});
 

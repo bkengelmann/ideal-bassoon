@@ -1,5 +1,5 @@
 // Bump this version whenever any file changes.
-const CACHE = 'calc-v2';
+const CACHE = 'calc-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
